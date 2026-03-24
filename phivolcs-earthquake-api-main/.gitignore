@@ -1,0 +1,5 @@
+node_modules/
+debug_response.html
+.env
+*.log
+.DS_Store
