@@ -72,18 +72,19 @@ def main():
     print()
     
     print("Choose which test email to send:")
-    print("1. EARTHQUAKE ALERT: (triggers PHIVOLCS workflow)")
-    print("2. HEAVY RAINFALL WARNING (triggers PAGASA workflow)")
-    print("3. Both test emails")
+    print("1. EARTHQUAKE ALERTS (triggers PHIVOLCS workflow)")
+    print("2. HEAVY RAINFALL WARNING (ORANGE/RED) (triggers PAGASA workflow)")
+    print("3. TROPICAL DEPRESSION / TYPHOON ALERTS")
+    print("4. Send all test emails")
     print("0. Exit")
     print()
     
-    choice = input("Enter your choice (0-3): ").strip()
+    choice = input("Enter your choice (0-4): ").strip()
     
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     if choice == "1":
-        print("\n📨 Sending EARTHQUAKE ALERT test email...")
+        print("\n📨 Sending EARTHQUAKE ALERTS test email...")
         html = f"""
         <html>
         <body>
@@ -94,6 +95,7 @@ def main():
             <ul>
                 <li>Subject: EARTHQUAKE ALERT:</li>
                 <li>Time: {timestamp}</li>
+                <li>Intensity Felt in Cebu: Intensity IV</li>
                 <li>Purpose: Trigger PHIVOLCS workflow in Power Automate</li>
             </ul>
             <p>If you receive this email, the trigger should activate and forward to your team.</p>
@@ -114,6 +116,8 @@ def main():
             <ul>
                 <li>Subject: HEAVY RAINFALL WARNING</li>
                 <li>Time: {timestamp}</li>
+                <li>Warning Level: ORANGE Rainfall Warning</li>
+                <li>Affected Area: Cebu City / Nearby Cities</li>
                 <li>Purpose: Trigger PAGASA workflow in Power Automate</li>
             </ul>
             <p>If you receive this email, the trigger should activate and forward to your team.</p>
@@ -121,9 +125,31 @@ def main():
         </html>
         """
         send_test_email("HEAVY RAINFALL WARNING", html)
-        
+
     elif choice == "3":
-        print("\n📨 Sending both test emails...")
+        print("\n📨 Sending TROPICAL DEPRESSION / TYPHOON ALERTS test email...")
+        html = f"""
+        <html>
+        <body>
+            <h2>🌀 TEST: Tropical Cyclone Alert</h2>
+            <p><strong>This is a test email to verify Power Automate trigger.</strong></p>
+            <hr>
+            <p><strong>Test Details:</strong></p>
+            <ul>
+                <li>Subject: TROPICAL DEPRESSION / TYPHOON ALERTS</li>
+                <li>Time: {timestamp}</li>
+                <li>Weather System: Tropical Storm - SAMPLE</li>
+                <li>Signal Level (if any): TCWS #1</li>
+                <li>Areas Affected: Cebu City / Nearby Cities</li>
+                <li>Purpose: Trigger cyclone workflow in Power Automate</li>
+            </ul>
+        </body>
+        </html>
+        """
+        send_test_email("TROPICAL DEPRESSION / TYPHOON ALERTS", html)
+        
+    elif choice == "4":
+        print("\n📨 Sending all test emails...")
         
         print("\n1️⃣ Sending EARTHQUAKE ALERT...")
         html1 = f"""
@@ -160,6 +186,23 @@ def main():
         </html>
         """
         send_test_email("HEAVY RAINFALL WARNING", html2)
+
+        print("\n3️⃣ Sending TROPICAL DEPRESSION / TYPHOON ALERTS...")
+        html3 = f"""
+        <html>
+        <body>
+            <h2>🌀 TEST: Tropical Cyclone Alert</h2>
+            <ul>
+                <li>Subject: TROPICAL DEPRESSION / TYPHOON ALERTS</li>
+                <li>Time: {timestamp}</li>
+                <li>Weather System: Tropical Storm - SAMPLE</li>
+                <li>Signal Level: TCWS #1</li>
+                <li>Areas Affected: Cebu City / Nearby Cities</li>
+            </ul>
+        </body>
+        </html>
+        """
+        send_test_email("TROPICAL DEPRESSION / TYPHOON ALERTS", html3)
         
     elif choice == "0":
         print("Exiting...")

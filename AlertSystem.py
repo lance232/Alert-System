@@ -159,7 +159,13 @@ def sendAlertEmail(earthquake: Optional[Dict[str, Any]] = None,
         sendEmail(subject, html, recipients)
     
     if advisories:
-        subject = "HEAVY RAINFALL WARNING"
+        advisory_types = {str(ad.get("type", "")).strip() for ad in advisories}
+        if advisory_types == {"Heavy Rainfall Warning"}:
+            subject = "HEAVY RAINFALL WARNING"
+        elif advisory_types == {"Tropical Cyclone Alert"}:
+            subject = "TROPICAL DEPRESSION / TYPHOON ALERTS"
+        else:
+            subject = "CRISIS WEATHER ALERTS"
         html = formatPagasaEmail(advisories, alert_time)
         sendEmail(subject, html, recipients)
 

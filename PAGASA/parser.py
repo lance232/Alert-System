@@ -7,6 +7,17 @@ from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 
 
+TARGET_CEBU_AREAS = [
+    ("Cebu City", [r"\bcebu\s*city\b", r"\b#cebu\b", r"\bcebu\b"]),
+    ("Mandaue", [r"\bmandaue\b"]),
+    ("Lapu-Lapu", [r"\blapu\s*[- ]?lapu\b"]),
+    ("Talisay", [r"\btalisay\b"]),
+    ("Consolacion", [r"\bconsolacion\b"]),
+    ("Liloan", [r"\bliloan\b"]),
+    ("Minglanilla", [r"\bminglanilla\b"]),
+]
+
+
 def parseDT(text: str) -> Optional[datetime]:
     if not text:
         return None
@@ -15,6 +26,95 @@ def parseDT(text: str) -> Optional[datetime]:
         return dtparse.parse(text, fuzzy=True)
     except Exception:
         return None
+
+
+def normalizeText(text: str) -> str:
+    return re.sub(r"\s+", " ", text or "").strip()
+
+
+def extractSnippet(text: str, pattern: str, window: int = 220) -> str:
+    match = re.search(pattern, text, flags=re.I)
+    if not match:
+        return text[: max(0, min(len(text), window * 2))]
+    start = max(0, match.start() - window)
+    end = min(len(text), match.end() + window)
+    return text[start:end].strip()
+
+
+def extractIssuedTimestamp(text: str) -> Optional[str]:
+    candidates = [
+        r"issued\s+at\s+([^.;]{8,80})",
+        r"as\s+of\s+([^.;]{8,80})",
+    ]
+    for pattern in candidates:
+        match = re.search(pattern, text, flags=re.I)
+        if not match:
+            continue
+        captured = match.group(1).strip(" :-")
+        parsed = parseDT(captured)
+        if parsed:
+            return parsed.isoformat()
+        return captured
+    return None
+
+
+def extractAffectedCebuAreas(text: str) -> List[str]:
+    found: List[str] = []
+    for canonical, patterns in TARGET_CEBU_AREAS:
+        for pattern in patterns:
+            if re.search(pattern, text, flags=re.I):
+                found.append(canonical)
+                break
+
+    unique = []
+    seen = set()
+    for area in found:
+        if area in seen:
+            continue
+        seen.add(area)
+        unique.append(area)
+    return unique
+
+
+def extractSignalLevel(text: str) -> str:
+    patterns = [
+        r"\bTCWS\s*#?\s*(\d)\b",
+        r"\bSignal\s*(?:No\.?\s*)?#?\s*(\d)\b",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.I)
+        if match:
+            return f"TCWS #{match.group(1)}"
+    return "None"
+
+
+def extractWeatherSystem(text: str) -> str:
+    match = re.search(
+        r"\b(Tropical\s+Depression|Tropical\s+Storm|Typhoon)\s+([A-Z][A-Z0-9\-]+)?",
+        text,
+        flags=re.I,
+    )
+    if not match:
+        return "Tropical Cyclone (name unavailable)"
+    system_type = match.group(1).title()
+    system_name = (match.group(2) or "").strip().upper()
+    return f"{system_type} - {system_name}" if system_name else system_type
+
+
+def extractCurrentLocation(text: str) -> str:
+    patterns = [
+        r"(?:located|estimated)\s+at\s+([^.;]{8,120})",
+        r"center\s+of\s+the\s+eye\s+was\s+estimated\s+based\s+on\s+all\s+available\s+data\s+at\s+([^.;]{8,120})",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.I)
+        if match:
+            return match.group(1).strip()
+    return "Location per PAGASA"
+
+
+def hasHeavyRainExpectation(text: str) -> bool:
+    return bool(re.search(r"heavy\s+rains?\s+(?:expected|possible|likely)", text, flags=re.I))
 
 
 def fetch_pagasa_visprsd(
@@ -42,74 +142,40 @@ def fetch_pagasa_visprsd(
 
 def parse_visprsd_cebu_advisories(html: str) -> List[Dict[str, Any]]:
     soup = BeautifulSoup(html, "lxml")
-    Blocks: List[str] = []
-
-    for Element in soup.find_all(string=re.compile(r"Thunderstorm Advisory No\.\s*\d+", re.I)):
-        parent = Element.parent
-        Text = re.sub(r"\s+", " ", parent.get_text(" ", strip=True)) if parent else str(Element).strip()
-        if len(Text) < 60 and parent and parent.parent:
-            Text = re.sub(r"\s+", " ", parent.parent.get_text(" ", strip=True))
-        Blocks.append(Text)
-   
-    for Element in soup.find_all(string=re.compile(r"Heavy Rainfall Warning", re.I)):
-        parent = Element.parent
-        Text = re.sub(r"\s+", " ", parent.get_text(" ", strip=True)) if parent else str(Element).strip()
-        if len(Text) < 60 and parent and parent.parent:
-            Text = re.sub(r"\s+", " ", parent.parent.get_text(" ", strip=True))
-        Blocks.append(Text)
-
-    Unique, Seen = [], set()
-    for Block in Blocks:
-        Key = re.sub(r"\s+", " ", Block)
-        if Key not in Seen:
-            Seen.add(Key)
-            Unique.append(Block)
+    page_text = normalizeText(soup.get_text(" ", strip=True))
+    if not page_text:
+        return []
 
     out: List[Dict[str, Any]] = []
-    
-    for Block in Unique:
-        if not re.search(r"\bCebu\b|#Cebu\b", Block, flags=re.I):
-            continue
+    affected_areas = extractAffectedCebuAreas(page_text)
 
-        number = "?"
-        Minimum = re.search(r"Thunderstorm Advisory No\.\s*([0-9]+)", Block, flags=re.I)
-        if Minimum:
-            number = Minimum.group(1)
+    if re.search(r"\bheavy\s+rainfall\s+warning\b", page_text, flags=re.I):
+        level_match = re.search(r"\b(ORANGE|RED)\b", page_text, flags=re.I)
+        warning_level = level_match.group(1).upper() if level_match else ""
+        if warning_level in ("ORANGE", "RED") and affected_areas:
+            out.append({
+                "source": "PAGASA",
+                "type": "Heavy Rainfall Warning",
+                "warning_level": warning_level,
+                "affected_areas": affected_areas,
+                "issued": extractIssuedTimestamp(page_text),
+                "raw": extractSnippet(page_text, r"\bheavy\s+rainfall\s+warning\b"),
+            })
 
-        issuedISO = None
-        Missed = re.search(
-            r"Issued\s+at\s+(.+?)(?=$|\.| within| Moderate| Light| The above| Heavy| Orange| Yellow)",
-            Block,
-            flags=re.I
-        )
-        if Missed:
-            Text = Missed.group(1).strip()
-            try:
-                issuedISO = parseDT(Text).isoformat()
-            except Exception:
-                issuedISO = Text
-
-        places: List[str] = []
-        cebuPlace = re.search(r"#Cebu\s*\(([^)]*)\)", Block, flags=re.I)
-        if cebuPlace:
-            raw = cebuPlace.group(1)
-            parts = [part.strip() for part in raw.split(",")]
-            for part in parts:
-                part = re.sub(r"([a-z])([A-Z])", r"\1 \2", part)
-                part = part.replace("CityOf", "City of ")
-                places.append(part)
-        
-        if not places:
-            places = ["Cebu (unspecified LGUs)"]
-
+    has_tropical_system = bool(
+        re.search(r"\b(Tropical\s+Depression|Tropical\s+Storm|Typhoon)\b", page_text, flags=re.I)
+    )
+    signal_level = extractSignalLevel(page_text)
+    if has_tropical_system and affected_areas and (signal_level != "None" or hasHeavyRainExpectation(page_text)):
         out.append({
             "source": "PAGASA",
-            "type": "Thunderstorm Advisory" if Minimum else "Rainfall Advisory",
-            "number": number,
-            "issued": issuedISO,
-            "mentions_cebu": True,
-            "cebu_places": places,
-            "raw": Block
+            "type": "Tropical Cyclone Alert",
+            "weather_system": extractWeatherSystem(page_text),
+            "current_location": extractCurrentLocation(page_text),
+            "signal_level": signal_level,
+            "affected_areas": affected_areas,
+            "issued": extractIssuedTimestamp(page_text),
+            "raw": extractSnippet(page_text, r"\b(Tropical\s+Depression|Tropical\s+Storm|Typhoon)\b"),
         })
 
     return out
@@ -145,30 +211,51 @@ def formatPagasaEmail(advisories: List[Dict[str, Any]], alert_time: str) -> str:
 
     advisory_html = ""
     for advisory in advisories:
-        places = ", ".join(advisory.get("cebu_places", [])) or "Cebu (unspecified LGUs)"
-        raw = advisory.get("raw", "")[:500]
-        advisory_type = safe_html(advisory.get("type", "Advisory"))
-        advisory_number = safe_html(advisory.get("number", "?"))
-        issued = safe_html(advisory.get("issued", "n/a"))
-        safe_places = safe_html(places)
-        safe_raw = safe_html(raw)
-        advisory_html += f"""
-        <div class="advisory-box">
-            <h3>{advisory_type} #{advisory_number}</h3>
-            <div class="info-row">
-                <span class="label">Issued:</span> {issued}
-            </div>
-            <div class="info-row">
-                <span class="label">Affected Areas (Cebu):</span> {safe_places}
-            </div>
-            <div class="info-row">
-                <span class="label">Details:</span><br>
-                <div style="margin-top: 5px; padding: 10px; background-color: #fff3cd; border-radius: 3px;">
-                    {safe_raw}
+        alert_type = advisory.get("type", "Advisory")
+        safe_places = safe_html(", ".join(advisory.get("affected_areas", [])) or "Cebu City / Nearby Cities")
+        issued = safe_html(advisory.get("issued") or alert_time)
+
+        if alert_type == "Heavy Rainfall Warning":
+            level = safe_html(advisory.get("warning_level", "ORANGE"))
+            advisory_html += f"""
+            <div class="advisory-box">
+                <h3>HEAVY RAINFALL WARNING</h3>
+                <div class="info-row"><span class="label">Warning Level:</span> {level} Rainfall Warning</div>
+                <div class="info-row"><span class="label">Affected Area:</span> {safe_places}</div>
+                <div class="info-row"><span class="label">Issued By:</span> PAGASA</div>
+                <div class="info-row"><span class="label">Date &amp; Time:</span> {issued}</div>
+                <div class="info-row">
+                    <span class="label">Safety Precautions:</span>
+                    <ul>
+                        <li>Avoid unnecessary travel.</li>
+                        <li>Be cautious of possible flooding in low-lying areas.</li>
+                        <li>Monitor local government advisories.</li>
+                    </ul>
                 </div>
             </div>
-        </div>
-        """
+            """
+        elif alert_type == "Tropical Cyclone Alert":
+            weather_system = safe_html(advisory.get("weather_system", "Tropical Cyclone"))
+            current_location = safe_html(advisory.get("current_location", "Location per PAGASA"))
+            signal_level = safe_html(advisory.get("signal_level", "None"))
+            advisory_html += f"""
+            <div class="advisory-box">
+                <h3>TROPICAL DEPRESSION / TYPHOON ALERTS</h3>
+                <div class="info-row"><span class="label">Weather System:</span> {weather_system}</div>
+                <div class="info-row"><span class="label">Current Location:</span> {current_location}</div>
+                <div class="info-row"><span class="label">Signal Level (if any):</span> {signal_level}</div>
+                <div class="info-row"><span class="label">Areas Affected:</span> {safe_places}</div>
+                <div class="info-row"><span class="label">Date &amp; Time:</span> as of {issued}</div>
+                <div class="info-row">
+                    <span class="label">Safety Precautions:</span>
+                    <ul>
+                        <li>Secure loose objects and prepare emergency essentials.</li>
+                        <li>Avoid unnecessary travel.</li>
+                        <li>Follow advisories from PAGASA and local authorities.</li>
+                    </ul>
+                </div>
+            </div>
+            """
 
     safe_alert_time = safe_html(alert_time)
     
@@ -183,13 +270,15 @@ def formatPagasaEmail(advisories: List[Dict[str, Any]], alert_time: str) -> str:
             .advisory-box {{ background-color: white; padding: 15px; margin: 15px 0; border-radius: 5px; border-left: 4px solid #ff9800; }}
             .info-row {{ margin: 10px 0; }}
             .label {{ font-weight: bold; color: #ff9800; }}
+            ul {{ margin-top: 8px; }}
+            li {{ margin-bottom: 6px; }}
             .footer {{ margin-top: 20px; font-size: 0.9em; color: #666; border-top: 1px solid #ddd; padding-top: 10px; }}
         </style>
     </head>
     <body>
         <div class="container">
             <div class="header">
-                <h2>⚠️ WEATHER ADVISORY - PAGASA (Cebu)</h2>
+                <h2>CRISIS WEATHER ALERTS</h2>
             </div>
             <div class="content">
                 {advisory_html}
@@ -197,7 +286,7 @@ def formatPagasaEmail(advisories: List[Dict[str, Any]], alert_time: str) -> str:
             <div class="footer">
                 <p><strong>Source:</strong> PAGASA Visayas PRSD (Philippine Atmospheric, Geophysical and Astronomical Services Administration)</p>
                 <p><strong>Alert Time:</strong> {safe_alert_time}</p>
-                <p><em>This is an automated alert from the NCR Atleos Alert System.</em></p>
+                <p><em>This is an automated crisis alert.</em></p>
             </div>
         </div>
     </body>
@@ -214,14 +303,24 @@ def formatPagasaConsole(new_advisories: List[Dict[str, Any]]) -> str:
         lines.append("No new advisory.")
     else:
         for advisory in new_advisories:
-            places = ", ".join(advisory.get("cebu_places", [])) or "Cebu (unspecified LGUs)"
-            raw = advisory.get("raw", "")
-            lines.append(
-                f"{advisory['type']} #{advisory.get('number', '?')}\n"
-                f"  Issued   : {advisory.get('issued', 'n/a')}\n"
-                f"  Cebu     : {places}\n"
-                f"  Raw      : {raw[:500]}{'...' if len(raw) > 500 else ''}\n"
-            )
+            places = ", ".join(advisory.get("affected_areas", [])) or "Cebu City / Nearby Cities"
+            advisory_type = advisory.get("type", "Advisory")
+            issued = advisory.get("issued", "n/a")
+            if advisory_type == "Heavy Rainfall Warning":
+                lines.append(
+                    f"Heavy Rainfall Warning ({advisory.get('warning_level', 'ORANGE')})\n"
+                    f"  Issued   : {issued}\n"
+                    f"  Areas    : {places}\n"
+                )
+            elif advisory_type == "Tropical Cyclone Alert":
+                lines.append(
+                    f"Tropical Cyclone Alert\n"
+                    f"  System   : {advisory.get('weather_system', 'Tropical Cyclone')}\n"
+                    f"  Location : {advisory.get('current_location', 'Location per PAGASA')}\n"
+                    f"  Signal   : {advisory.get('signal_level', 'None')}\n"
+                    f"  Areas    : {places}\n"
+                    f"  Issued   : {issued}\n"
+                )
     return "\n".join(lines)
 
 
@@ -237,7 +336,14 @@ def process_advisories(
         new_advisories: List[Dict[str, Any]] = []
         for advisory in advisories:
             issued_part = advisory.get("issued") or ""
-            advisory_key = f"VSPRSD-TA-{advisory['number']}-{issued_part}"
+            advisory_key = "|".join([
+                str(advisory.get("type", "Advisory")),
+                str(advisory.get("warning_level", "")),
+                str(advisory.get("weather_system", "")),
+                str(advisory.get("signal_level", "")),
+                str(issued_part),
+                ",".join(advisory.get("affected_areas", [])),
+            ])
             if advisory_key in seen_pagasa_ids:
                 continue
             new_advisories.append(advisory)
