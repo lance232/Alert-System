@@ -39,6 +39,22 @@ SMTP_PORT=587
 PHIVOLCS_API_URL=http://localhost:3001/api/earthquakes
 POLL_INTERVAL_SEC=30
 COLD_START_SUPPRESS=1
+
+# Smart refresh settings (advanced - leave as default)
+SMART_REFRESH=1
+STALE_MAX_SEC=60
+NO_NEW_CYCLES_BEFORE_REFRESH=1
+MIN_REFRESH_GAP_SEC=25
+
+# Cold start suppression (1=don't send alerts for old events on first run)
+COLD_START_SUPPRESS=1
+
+# Maximum event age in minutes (0=no limit, only alert for recent events)
+MAX_EVENT_AGE_MIN=0
+
+# State file location (tracks which alerts have been sent)
+STATE_FILE=state_phivolcs_pagasa.json
+
 ```
 
 **Replace:**
