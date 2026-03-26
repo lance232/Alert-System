@@ -140,6 +140,29 @@ def fetch_pagasa_visprsd(
     raise RuntimeError(f"PAGASA fetch failed on all endpoints: {lastError}")
 
 
+def fetch_pagasa_tc_bulletin(
+    session: requests.Session,
+    endpoints: List[str] = None
+) -> str:
+    if endpoints is None:
+        endpoints = [
+            "https://www.pagasa.dost.gov.ph/tropical-cyclone/severe-weather-bulletin",
+            "https://bagong.pagasa.dost.gov.ph/tropical-cyclone/severe-weather-bulletin",
+        ]
+    
+    lastError = None
+    for url in endpoints:
+        try:
+            Read = session.get(url, timeout=(10, 30))
+            Read.raise_for_status()
+            return Read.text
+        except Exception as Exempted:
+            lastError = Exempted
+            time.sleep(2)
+    
+    raise RuntimeError(f"PAGASA TC bulletin fetch failed on all endpoints: {lastError}")
+
+
 def parse_visprsd_cebu_advisories(html: str) -> List[Dict[str, Any]]:
     soup = BeautifulSoup(html, "lxml")
     page_text = normalizeText(soup.get_text(" ", strip=True))
@@ -178,6 +201,44 @@ def parse_visprsd_cebu_advisories(html: str) -> List[Dict[str, Any]]:
             "raw": extractSnippet(page_text, r"\b(Tropical\s+Depression|Tropical\s+Storm|Typhoon)\b"),
         })
 
+    return out
+
+
+def parse_tc_bulletin_cebu_alerts(html: str) -> List[Dict[str, Any]]:
+    """Parse tropical cyclone bulletin for Cebu-area alerts"""
+    soup = BeautifulSoup(html, "lxml")
+    page_text = normalizeText(soup.get_text(" ", strip=True))
+    if not page_text:
+        return []
+
+    out: List[Dict[str, Any]] = []
+    
+    # Check if there's an active TC
+    if re.search(r"no\s+active\s+tropical\s+cyclone", page_text, flags=re.I):
+        return []
+    
+    affected_areas = extractAffectedCebuAreas(page_text)
+    
+    # Look for TC mentions
+    has_tropical_system = bool(
+        re.search(r"\b(Tropical\s+Depression|Tropical\s+Storm|Typhoon)\b", page_text, flags=re.I)
+    )
+    
+    if has_tropical_system and affected_areas:
+        signal_level = extractSignalLevel(page_text)
+        # Only alert if there's a signal level or heavy rain expected
+        if signal_level != "None" or hasHeavyRainExpectation(page_text):
+            out.append({
+                "source": "PAGASA",
+                "type": "Tropical Cyclone Alert",
+                "weather_system": extractWeatherSystem(page_text),
+                "current_location": extractCurrentLocation(page_text),
+                "signal_level": signal_level,
+                "affected_areas": affected_areas,
+                "issued": extractIssuedTimestamp(page_text),
+                "raw": extractSnippet(page_text, r"\b(Tropical\s+Depression|Tropical\s+Storm|Typhoon)\b"),
+            })
+    
     return out
 
 
@@ -327,11 +388,29 @@ def formatPagasaConsole(new_advisories: List[Dict[str, Any]]) -> str:
 def process_advisories(
     session: requests.Session,
     endpoints: List[str],
-    seen_pagasa_ids: set
+    seen_pagasa_ids: set,
+    tc_endpoints: List[str] = None
 ) -> Tuple[List[Dict[str, Any]], str, set]:
     try:
+        # Fetch PRSD page for Heavy Rainfall Warnings
         vis_html = fetch_pagasa_visprsd(session, endpoints)
         advisories = parse_visprsd_cebu_advisories(vis_html)
+        hrw_status = ExtractHRWStatus(vis_html)
+        
+        # Fetch TC bulletin page for Tropical Cyclone Alerts
+        if tc_endpoints is None:
+            tc_endpoints = [
+                "https://www.pagasa.dost.gov.ph/tropical-cyclone/severe-weather-bulletin",
+                "https://bagong.pagasa.dost.gov.ph/tropical-cyclone/severe-weather-bulletin",
+            ]
+        
+        try:
+            tc_html = fetch_pagasa_tc_bulletin(session, tc_endpoints)
+            tc_advisories = parse_tc_bulletin_cebu_alerts(tc_html)
+            advisories.extend(tc_advisories)
+        except Exception:
+            # TC bulletin fetch failed, continue with PRSD-only results
+            pass
         
         new_advisories: List[Dict[str, Any]] = []
         for advisory in advisories:
@@ -348,8 +427,6 @@ def process_advisories(
                 continue
             new_advisories.append(advisory)
             seen_pagasa_ids.add(advisory_key)
-        
-        hrw_status = ExtractHRWStatus(vis_html)
         
         return new_advisories, hrw_status, seen_pagasa_ids
         
