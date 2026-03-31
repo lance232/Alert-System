@@ -71,7 +71,7 @@ def generate_test_email_html(alert_type: str, alert_time: str) -> str:
     if alert_type == "HEAVY_RAINFALL":
         advisory_html = """
             <div class="advisory-box">
-                <h3>HEAVY RAINFALL WARNING</h3>
+                <h3>HEAVY RAINFALL WARNING (TEST_EMAIL)</h3>
                 <div class="info-row"><span class="label">Warning Level:</span> ORANGE Rainfall Warning</div>
                 <div class="info-row"><span class="label">Affected Area:</span> Cebu City / Nearby Cities</div>
                 <div class="info-row"><span class="label">Issued By:</span> PAGASA</div>
@@ -90,7 +90,7 @@ def generate_test_email_html(alert_type: str, alert_time: str) -> str:
     elif alert_type == "TROPICAL_CYCLONE":
         advisory_html = """
             <div class="advisory-box">
-                <h3>TROPICAL DEPRESSION / TYPHOON ALERTS</h3>
+                <h3>TROPICAL DEPRESSION / TYPHOON ALERTS (TEST_EMAIL)</h3>
                 <div class="info-row"><span class="label">Weather System:</span> Tropical Storm - SAMPLE</div>
                 <div class="info-row"><span class="label">Current Location:</span> Location per PAGASA</div>
                 <div class="info-row"><span class="label">Signal Level (if any):</span> TCWS #1</div>
@@ -102,6 +102,24 @@ def generate_test_email_html(alert_type: str, alert_time: str) -> str:
                         <li>Secure loose objects and prepare emergency essentials.</li>
                         <li>Avoid unnecessary travel.</li>
                         <li>Follow advisories from PAGASA and local authorities.</li>
+                    </ul>
+                </div>
+            </div>
+            """
+    elif alert_type == "THUNDERSTORM":
+        advisory_html = """
+            <div class="advisory-box">
+                <h3>THUNDERSTORM WARNING (TEST_EMAIL)</h3>
+                <div class="info-row"><span class="label">Warning Level:</span> YELLOW</div>
+                <div class="info-row"><span class="label">Affected Area:</span> Cebu City / Nearby Cities</div>
+                <div class="info-row"><span class="label">Issued By:</span> PAGASA</div>
+                <div class="info-row"><span class="label">Date &amp; Time:</span> {alert_time}</div>
+                <div class="info-row">
+                    <span class="label">Safety Precautions:</span>
+                    <ul>
+                        <li>Stay indoors and avoid open high ground points.</li>
+                        <li>Unplug electronics during lightning activity.</li>
+                        <li>Monitor local advisories for changes.</li>
                     </ul>
                 </div>
             </div>
@@ -153,19 +171,20 @@ def main():
     
     print("Choose which test email to send:")
     print("1. EARTHQUAKE ALERTS (triggers PHIVOLCS workflow)")
-    print("2. HEAVY RAINFALL WARNING (ORANGE/RED) (triggers PAGASA workflow)")
+    print("2. HEAVY RAINFALL WARNING (triggers PAGASA workflow)")
     print("3. TROPICAL DEPRESSION / TYPHOON ALERTS (triggers PAGASA workflow)")
-    print("4. Send all test emails")
+    print("4. THUNDERSTORM WARNING (triggers PAGASA workflow)")
+    print("5. Send all test emails")
     print("0. Exit")
     print()
     
-    choice = input("Enter your choice (0-4): ").strip()
+    choice = input("Enter your choice (0-5): ").strip()
     
     alert_time = datetime.now().isoformat(timespec="seconds")
     
     if choice == "1":
         print("\n📨 Sending EARTHQUAKE ALERT test email...")
-        print(f"   Subject: EARTHQUAKE ALERT:")
+        print(f"   Subject: EARTHQUAKE ALERT: (TEST_EMAIL)")
         # Format matches PHIVOLCS formatEarthquakeEmail from AlertSystem.py
         html = f"""
         <html>
@@ -185,7 +204,7 @@ def main():
         <body>
             <div class="container">
                 <div class="header">
-                    <h2>EARTHQUAKE ALERTS</h2>
+                    <h2>EARTHQUAKE ALERTS (TEST_EMAIL)</h2>
                 </div>
                 <div class="content">
                     <div class="info-row">
@@ -218,21 +237,27 @@ def main():
         </body>
         </html>
         """
-        send_test_email("EARTHQUAKE ALERT:", html)
+        send_test_email("EARTHQUAKE ALERT: (TEST_EMAIL)", html)
         
     elif choice == "2":
         print("\n📨 Sending HEAVY RAINFALL WARNING test email...")
-        print(f"   Subject: HEAVY RAINFALL WARNING")
+        print(f"   Subject: HEAVY RAINFALL WARNING (TEST_EMAIL)")
         html = generate_test_email_html("HEAVY_RAINFALL", alert_time)
-        send_test_email("HEAVY RAINFALL WARNING", html)
+        send_test_email("HEAVY RAINFALL WARNING (TEST_EMAIL)", html)
 
     elif choice == "3":
         print("\n📨 Sending TROPICAL DEPRESSION / TYPHOON ALERTS test email...")
-        print(f"   Subject: TROPICAL DEPRESSION / TYPHOON ALERTS")
+        print(f"   Subject: TROPICAL DEPRESSION / TYPHOON ALERTS (TEST_EMAIL)")
         html = generate_test_email_html("TROPICAL_CYCLONE", alert_time)
-        send_test_email("TROPICAL DEPRESSION / TYPHOON ALERTS", html)
+        send_test_email("TROPICAL DEPRESSION / TYPHOON ALERTS (TEST_EMAIL)", html)
         
     elif choice == "4":
+        print("\n📨 Sending THUNDERSTORM WARNING test email...")
+        print(f"   Subject: THUNDERSTORM WARNING (TEST_EMAIL)")
+        html = generate_test_email_html("THUNDERSTORM", alert_time)
+        send_test_email("THUNDERSTORM WARNING (TEST_EMAIL)", html)
+
+    elif choice == "5":
         print("\n📨 Sending all test emails...")
         
         print("\n1️⃣ Sending EARTHQUAKE ALERT...")
@@ -254,7 +279,7 @@ def main():
         <body>
             <div class="container">
                 <div class="header">
-                    <h2>EARTHQUAKE ALERTS</h2>
+                    <h2>EARTHQUAKE ALERTS (TEST_EMAIL)</h2>
                 </div>
                 <div class="content">
                     <div class="info-row">
@@ -287,15 +312,19 @@ def main():
         </body>
         </html>
         """
-        send_test_email("EARTHQUAKE ALERT:", earthquake_html)
+        send_test_email("EARTHQUAKE ALERT: (TEST_EMAIL)", earthquake_html)
         
         print("\n2️⃣ Sending HEAVY RAINFALL WARNING...")
         html2 = generate_test_email_html("HEAVY_RAINFALL", alert_time)
-        send_test_email("HEAVY RAINFALL WARNING", html2)
+        send_test_email("HEAVY RAINFALL WARNING (TEST_EMAIL)", html2)
 
         print("\n3️⃣ Sending TROPICAL DEPRESSION / TYPHOON ALERTS...")
         html3 = generate_test_email_html("TROPICAL_CYCLONE", alert_time)
-        send_test_email("TROPICAL DEPRESSION / TYPHOON ALERTS", html3)
+        send_test_email("TROPICAL DEPRESSION / TYPHOON ALERTS (TEST_EMAIL)", html3)
+
+        print("\n4️⃣ Sending THUNDERSTORM WARNING...")
+        html4 = generate_test_email_html("THUNDERSTORM", alert_time)
+        send_test_email("THUNDERSTORM WARNING (TEST_EMAIL)", html4)
         
     elif choice == "0":
         print("Exiting...")

@@ -5,7 +5,9 @@ The system sends alerts using the following crisis trigger rules and templates.
 ## 1. Earthquake Alerts
 
 ### When to send
-- Earthquake intensity felt in Cebu is **Intensity IV or higher**.
+- Earthquake event is **Cebu-specific** (location/details mention Cebu, or Cebu felt-intensity data exists).
+- Earthquake magnitude is **2.5 or higher**.
+- Depth and other earthquake parameters are **not used** for alert triggering.
 
 ### Template fields
 - Date & Time
@@ -17,7 +19,7 @@ The system sends alerts using the following crisis trigger rules and templates.
 ## 2. Heavy Rainfall Warning
 
 ### When to send
-- PAGASA issues **ORANGE** or **RED** rainfall warning.
+- PAGASA issues **any Heavy Rainfall Warning level** (e.g., Yellow, Orange, Red, or unspecified on page).
 - Affected area includes **Cebu City** or nearby cities:
   - Mandaue
   - Lapu-Lapu
@@ -27,12 +29,24 @@ The system sends alerts using the following crisis trigger rules and templates.
   - Minglanilla
 
 ### Template fields
-- Warning Level: ORANGE or RED Rainfall Warning
+- Warning Level: PAGASA-provided level (all levels accepted)
 - Affected Area: Cebu City / Nearby Cities
 - Issued By: PAGASA
 - Safety Precautions
 
-## 3. Tropical Depression / Typhoon Alerts
+## 3. Thunderstorm Warning
+
+### When to send
+- PAGASA page contains **Thunderstorm Warning** or **Thunderstorm Advisory**.
+- Affected area includes **Cebu City** or nearby cities.
+
+### Template fields
+- Warning Level (if present)
+- Affected Area: Cebu City / Nearby Cities
+- Issued By: PAGASA
+- Safety Precautions
+
+## 4. Tropical Depression / Typhoon Alerts
 
 ### When to send
 - Cebu City or nearby cities are within forecast track.

@@ -162,6 +162,8 @@ def sendAlertEmail(earthquake: Optional[Dict[str, Any]] = None,
         advisory_types = {str(ad.get("type", "")).strip() for ad in advisories}
         if advisory_types == {"Heavy Rainfall Warning"}:
             subject = "HEAVY RAINFALL WARNING"
+        elif advisory_types == {"Thunderstorm Warning"}:
+            subject = "THUNDERSTORM WARNING"
         elif advisory_types == {"Tropical Cyclone Alert"}:
             subject = "TROPICAL DEPRESSION / TYPHOON ALERTS"
         else:

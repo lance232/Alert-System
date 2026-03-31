@@ -106,6 +106,44 @@ def parseDT(text: str) -> Optional[datetime]:
         return None
 
 
+def parseMagnitude(value: Any) -> Optional[float]:
+    text = str(value or "").strip()
+    if not text:
+        return None
+
+    direct = re.search(r"[-+]?\d+(?:\.\d+)?", text)
+    if not direct:
+        return None
+
+    try:
+        return float(direct.group(0))
+    except Exception:
+        return None
+
+
+def isCebuEarthquake(earthquake: Dict[str, Any]) -> bool:
+    fields_to_check = [
+        "location",
+        "raw",
+        "details",
+        "area",
+        "nearestArea",
+        "province",
+        "region",
+    ]
+
+    for key in fields_to_check:
+        value = earthquake.get(key)
+        if value is None:
+            continue
+        text = str(value)
+        if re.search(r"\bcebu(?:\s+city)?\b", text, flags=re.I):
+            return True
+
+    # If Cebu felt intensity is present, treat as Cebu-relevant event.
+    return parseCebuIntensity(earthquake) is not None
+
+
 def normNum(Numbers: str, decimals: int = 3) -> str:
     try:
         return f"{float(str(Numbers).strip()):.{decimals}f}"
@@ -123,8 +161,11 @@ def WithRefreshPath(apiURL: str) -> str:
 
 
 def meetsAlertCriteria(earthquake: Dict[str, Any]) -> bool:
-    intensity = parseCebuIntensity(earthquake)
-    return intensity is not None and intensity >= 4
+    if not isCebuEarthquake(earthquake):
+        return False
+
+    magnitude = parseMagnitude(earthquake.get("magnitude"))
+    return magnitude is not None and magnitude >= 2.5
 
 
 def FetchPhivolcs(

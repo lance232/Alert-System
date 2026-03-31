@@ -43,8 +43,8 @@ def extractSnippet(text: str, pattern: str, window: int = 220) -> str:
 
 def extractIssuedTimestamp(text: str) -> Optional[str]:
     candidates = [
-        r"issued\s+at\s+([^.;]{8,80})",
-        r"as\s+of\s+([^.;]{8,80})",
+        r"issued\s+at\s+(.{8,80}?)(?=\s+(?:thunderstorm|heavy\s+rainfall|special\s+forecast|tropical|within\s+\d+\s+hours|$)|[.;])",
+        r"as\s+of\s+(.{8,80}?)(?=\s+(?:thunderstorm|heavy\s+rainfall|special\s+forecast|tropical|within\s+\d+\s+hours|$)|[.;])",
     ]
     for pattern in candidates:
         match = re.search(pattern, text, flags=re.I)
@@ -117,6 +117,24 @@ def hasHeavyRainExpectation(text: str) -> bool:
     return bool(re.search(r"heavy\s+rains?\s+(?:expected|possible|likely)", text, flags=re.I))
 
 
+def extractWarningLevel(text: str) -> str:
+    match = re.search(r"\b(YELLOW|ORANGE|RED)\b", text, flags=re.I)
+    if match:
+        return match.group(1).upper()
+    return "UNSPECIFIED"
+
+
+def extractThunderstormOutlook(text: str) -> str:
+    match = re.search(
+        r"\bThunderstorm\s+is\s+(VERY\s+LIKELY|LIKELY|LESS\s+LIKELY)\s+to\s+develop\b",
+        text,
+        flags=re.I,
+    )
+    if match:
+        return re.sub(r"\s+", " ", match.group(1).upper()).strip()
+    return "UNSPECIFIED"
+
+
 def fetch_pagasa_visprsd(
     session: requests.Session,
     endpoints: List[str] = None
@@ -172,17 +190,35 @@ def parse_visprsd_cebu_advisories(html: str) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     affected_areas = extractAffectedCebuAreas(page_text)
 
-    if re.search(r"\bheavy\s+rainfall\s+warning\b", page_text, flags=re.I):
-        level_match = re.search(r"\b(ORANGE|RED)\b", page_text, flags=re.I)
-        warning_level = level_match.group(1).upper() if level_match else ""
-        if warning_level in ("ORANGE", "RED") and affected_areas:
+    if re.search(r"\bheavy\s+rainfall\s+warning\b", page_text, flags=re.I) and affected_areas:
+        warning_level = extractWarningLevel(page_text)
+        out.append({
+            "source": "PAGASA",
+            "type": "Heavy Rainfall Warning",
+            "warning_level": warning_level,
+            "affected_areas": affected_areas,
+            "issued": extractIssuedTimestamp(page_text),
+            "raw": extractSnippet(page_text, r"\bheavy\s+rainfall\s+warning\b"),
+        })
+
+    has_thunderstorm_warning = bool(
+        re.search(r"\bthunderstorm\s+(?:warning|advisory|information)\b", page_text, flags=re.I)
+    )
+    has_thunderstorm_outlook = bool(
+        re.search(r"\bthunderstorm\s+is\s+(?:very\s+likely|likely|less\s+likely)\s+to\s+develop\b", page_text, flags=re.I)
+    )
+    if (has_thunderstorm_warning or has_thunderstorm_outlook) and affected_areas:
+        outlook = extractThunderstormOutlook(page_text)
+        # Ignore low-confidence outlook bulletins to reduce noise.
+        if outlook != "LESS LIKELY":
             out.append({
                 "source": "PAGASA",
-                "type": "Heavy Rainfall Warning",
-                "warning_level": warning_level,
+                "type": "Thunderstorm Warning",
+                "warning_level": extractWarningLevel(page_text),
+                "thunderstorm_outlook": outlook,
                 "affected_areas": affected_areas,
                 "issued": extractIssuedTimestamp(page_text),
-                "raw": extractSnippet(page_text, r"\bheavy\s+rainfall\s+warning\b"),
+                "raw": extractSnippet(page_text, r"\bthunderstorm\s+(?:warning|advisory|information|is\s+(?:very\s+likely|likely|less\s+likely)\s+to\s+develop)\b"),
             })
 
     has_tropical_system = bool(
@@ -295,6 +331,27 @@ def formatPagasaEmail(advisories: List[Dict[str, Any]], alert_time: str) -> str:
                 </div>
             </div>
             """
+        elif alert_type == "Thunderstorm Warning":
+            level = safe_html(advisory.get("warning_level", "UNSPECIFIED"))
+            outlook = safe_html(advisory.get("thunderstorm_outlook", "UNSPECIFIED"))
+            advisory_html += f"""
+            <div class="advisory-box">
+                <h3>THUNDERSTORM WARNING</h3>
+                <div class="info-row"><span class="label">Warning Level:</span> {level}</div>
+                <div class="info-row"><span class="label">Thunderstorm Outlook:</span> {outlook}</div>
+                <div class="info-row"><span class="label">Affected Area:</span> {safe_places}</div>
+                <div class="info-row"><span class="label">Issued By:</span> PAGASA</div>
+                <div class="info-row"><span class="label">Date &amp; Time:</span> {issued}</div>
+                <div class="info-row">
+                    <span class="label">Safety Precautions:</span>
+                    <ul>
+                        <li>Stay indoors and avoid open areas during active thunderstorms.</li>
+                        <li>Unplug sensitive electronics when lightning risk is high.</li>
+                        <li>Monitor local government and PAGASA advisories.</li>
+                    </ul>
+                </div>
+            </div>
+            """
         elif alert_type == "Tropical Cyclone Alert":
             weather_system = safe_html(advisory.get("weather_system", "Tropical Cyclone"))
             current_location = safe_html(advisory.get("current_location", "Location per PAGASA"))
@@ -370,6 +427,13 @@ def formatPagasaConsole(new_advisories: List[Dict[str, Any]]) -> str:
             if advisory_type == "Heavy Rainfall Warning":
                 lines.append(
                     f"Heavy Rainfall Warning ({advisory.get('warning_level', 'ORANGE')})\n"
+                    f"  Issued   : {issued}\n"
+                    f"  Areas    : {places}\n"
+                )
+            elif advisory_type == "Thunderstorm Warning":
+                lines.append(
+                    f"Thunderstorm Warning ({advisory.get('warning_level', 'UNSPECIFIED')})\n"
+                    f"  Outlook  : {advisory.get('thunderstorm_outlook', 'UNSPECIFIED')}\n"
                     f"  Issued   : {issued}\n"
                     f"  Areas    : {places}\n"
                 )
