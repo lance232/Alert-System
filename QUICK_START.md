@@ -30,7 +30,7 @@ EMAIL_APP_PASSWORD=abcdefghijklmnop
 EMAIL_RECIPIENTS=colleague1@outlook.com,colleague2@outlook.com,boss@company.com
 
 # Optional Settings
-EMAIL_FROM_NAME=PH Alert System
+EMAIL_FROM_NAME=NCR Alert System
 EMAIL_ENABLED=1
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
@@ -51,6 +51,15 @@ COLD_START_SUPPRESS=1
 
 # Maximum event age in minutes (0=no limit, only alert for recent events)
 MAX_EVENT_AGE_MIN=0
+
+# Maximum pending quake alerts kept in queue (latest N events)
+MAX_PENDING_QUAKE_EVENTS=5
+
+# USGS secondary confirmation settings
+USGS_CONFIRMATION_ENABLED=1
+USGS_MATCH_TIME_WINDOW_MIN=20
+USGS_MATCH_MAX_DISTANCE_KM=180
+USGS_MATCH_MAG_TOLERANCE=0.8
 
 # State file location (tracks which alerts have been sent)
 STATE_FILE=state_phivolcs_pagasa.json
@@ -82,7 +91,7 @@ python AlertSystem.py
 You should see:
 ```
 ======================================================================
-PHIVOLCS + PAGASA Alert System with Email Integration
+NCR Alert System (PHIVOLCS + PAGASA) with Email Integration
 ======================================================================
 Poll Interval      : 30s
 PHIVOLCS API       : http://localhost:3001/api/earthquakes
@@ -99,6 +108,10 @@ Email Configuration:
 
 Starting monitoring...
 ```
+
+Earthquake alerts are Cebu-only and trigger only at magnitude **greater than 4.0**.
+If one cycle fails, unsent Cebu earthquake alerts are queued and retried in the next cycle.
+To avoid restart spam from old backlog, the queue keeps only the **latest 5 qualifying events** by default.
 
 ---
 
@@ -210,7 +223,7 @@ When running 24/7:
 | `EMAIL_ADDRESS` | *(required)* | Your Gmail address |
 | `EMAIL_APP_PASSWORD` | *(required)* | 16-char Gmail app password |
 | `EMAIL_RECIPIENTS` | *(required)* | Comma-separated recipient emails |
-| `EMAIL_FROM_NAME` | PH Alert System | Display name in emails |
+| `EMAIL_FROM_NAME` | NCR Alert System | Display name in emails |
 | `EMAIL_ENABLED` | 1 | 1=enabled, 0=disabled |
 | `SMTP_HOST` | smtp.gmail.com | Gmail SMTP server |
 | `SMTP_PORT` | 587 | SMTP port (TLS) |
@@ -218,6 +231,11 @@ When running 24/7:
 | `POLL_INTERVAL_SEC` | 30 | Check interval in seconds |
 | `COLD_START_SUPPRESS` | 1 | Suppress alerts on first run |
 | `MAX_EVENT_AGE_MIN` | 0 | Only alert for events within X minutes (0=unlimited) |
+| `MAX_PENDING_QUAKE_EVENTS` | 5 | Keep only latest N qualifying queued quake events |
+| `USGS_CONFIRMATION_ENABLED` | 1 | Enable USGS secondary confirmation metadata |
+| `USGS_MATCH_TIME_WINDOW_MIN` | 20 | Max time difference for PHIVOLCS-USGS match |
+| `USGS_MATCH_MAX_DISTANCE_KM` | 180 | Max epicenter distance for PHIVOLCS-USGS match |
+| `USGS_MATCH_MAG_TOLERANCE` | 0.8 | Max magnitude difference for PHIVOLCS-USGS match |
 
 ---
 

@@ -12,7 +12,13 @@ from dateutil import parser as dtparse
 from urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
 
-from PHIVOLCS import process_earthquakes, formatEarthquakeEmail, formatEarthquakeConsole
+from PHIVOLCS import (
+    process_earthquakes,
+    formatEarthquakeEmail,
+    formatEarthquakeConsole,
+    meetsAlertCriteria,
+    annotateUSGSConfirmation,
+)
 from PAGASA import process_advisories, formatPagasaEmail, formatPagasaConsole
 
 try:
@@ -21,25 +27,79 @@ try:
 except ImportError:
     pass
 
-PollIntervalSec = int(os.getenv("POLL_INTERVAL_SEC", "30"))
+def envBool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+
+    value = raw.strip().lower()
+    if value in {"1", "true", "yes", "y", "on"}:
+        return True
+    if value in {"0", "false", "no", "n", "off"}:
+        return False
+
+    print(f"[Config] Invalid boolean for {name}={raw!r}; using default {default}")
+    return default
+
+
+def envInt(name: str, default: int, minimum: Optional[int] = None) -> int:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+
+    try:
+        value = int(raw)
+    except Exception:
+        print(f"[Config] Invalid integer for {name}={raw!r}; using default {default}")
+        return default
+
+    if minimum is not None and value < minimum:
+        print(f"[Config] {name} below minimum ({minimum}); using minimum value")
+        return minimum
+    return value
+
+
+def envFloat(name: str, default: float, minimum: Optional[float] = None) -> float:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+
+    try:
+        value = float(raw)
+    except Exception:
+        print(f"[Config] Invalid number for {name}={raw!r}; using default {default}")
+        return default
+
+    if minimum is not None and value < minimum:
+        print(f"[Config] {name} below minimum ({minimum}); using minimum value")
+        return minimum
+    return value
+
+
+PollIntervalSec = envInt("POLL_INTERVAL_SEC", 30, minimum=1)
 
 PhivolcsAPIurl = os.getenv("PHIVOLCS_API_URL", "http://localhost:3001/api/earthquakes")
 
-smartRefresh = os.getenv("SMART_REFRESH", "1") == "1"
-StaleMaxSec = int(os.getenv("STALE_MAX_SEC", "60"))
-NoNewCyclesBeforeRefresh = int(os.getenv("NO_NEW_CYCLES_BEFORE_REFRESH", "1"))
-MinRefreshGapSec = int(os.getenv("MIN_REFRESH_GAP_SEC", "25"))
+smartRefresh = envBool("SMART_REFRESH", True)
+StaleMaxSec = envInt("STALE_MAX_SEC", 60, minimum=0)
+NoNewCyclesBeforeRefresh = envInt("NO_NEW_CYCLES_BEFORE_REFRESH", 1, minimum=0)
+MinRefreshGapSec = envInt("MIN_REFRESH_GAP_SEC", 25, minimum=0)
 
-ColdStartSupress = os.getenv("COLD_START_SUPPRESS", "1") == "1"      
-MaxEventAgeMin = int(os.getenv("MAX_EVENT_AGE_MIN", "0"))
+ColdStartSupress = envBool("COLD_START_SUPPRESS", True)
+MaxEventAgeMin = envInt("MAX_EVENT_AGE_MIN", 0, minimum=0)
+MaxPendingQuakeEvents = envInt("MAX_PENDING_QUAKE_EVENTS", 5, minimum=0)
+USGSConfirmationEnabled = envBool("USGS_CONFIRMATION_ENABLED", True)
+USGSMatchTimeWindowMin = envFloat("USGS_MATCH_TIME_WINDOW_MIN", 20.0, minimum=0.0)
+USGSMatchMaxDistanceKm = envFloat("USGS_MATCH_MAX_DISTANCE_KM", 180.0, minimum=0.0)
+USGSMatchMagTolerance = envFloat("USGS_MATCH_MAG_TOLERANCE", 0.8, minimum=0.0)
 
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_PORT = envInt("SMTP_PORT", 587, minimum=1)
 EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS", "")
 EMAIL_APP_PASSWORD = os.getenv("EMAIL_APP_PASSWORD", "")
 EMAIL_RECIPIENTS = os.getenv("EMAIL_RECIPIENTS", "")
-EMAIL_ENABLED = os.getenv("EMAIL_ENABLED", "1") == "1"
-EMAIL_FROM_NAME = os.getenv("EMAIL_FROM_NAME", "PH Alert System")
+EMAIL_ENABLED = envBool("EMAIL_ENABLED", True)
+EMAIL_FROM_NAME = os.getenv("EMAIL_FROM_NAME", "NCR Alert System")
 
 PAGASA_endpoints = [
     "https://bagong.pagasa.dost.gov.ph/regional-forecast/visprsd",
@@ -77,6 +137,7 @@ def loadState() -> Dict[str, Any]:
             pass
     return {
         "seen_quake_ids": [],
+        "pending_quake_events": [],
         "seen_pagasa_ids": [],
         "no_new_cycles": 0,
         "last_top_id": "",            
@@ -97,6 +158,20 @@ def parseDT(text: str) -> Optional[datetime]:
         return dtparse.parse(text, fuzzy=True)
     except Exception:
         return None
+
+
+def quakeSortKey(quake: Dict[str, Any]) -> float:
+    quake_dt = parseDT(str(quake.get("time", "")))
+    if not quake_dt:
+        return 0.0
+    if quake_dt.tzinfo is None:
+        quake_dt = quake_dt.replace(tzinfo=timezone.utc)
+    return quake_dt.timestamp()
+
+
+def serializeQuakeForState(quake: Dict[str, Any]) -> Dict[str, Any]:
+    transient_keys = {"_dt", "usgs_confirmed", "usgs_match", "usgs_match_summary"}
+    return {key: value for key, value in quake.items() if key not in transient_keys}
 
 
 def sendEmail(subject: str, html_content: str, recipients: List[str]) -> bool:
@@ -142,21 +217,22 @@ def sendEmail(subject: str, html_content: str, recipients: List[str]) -> bool:
         traceback.print_exc()
         return False
 
-def sendAlertEmail(earthquake: Optional[Dict[str, Any]] = None, 
-                   advisories: Optional[List[Dict[str, Any]]] = None) -> None:
+def sendAlertEmail(earthquake: Optional[Dict[str, Any]] = None,
+                   advisories: Optional[List[Dict[str, Any]]] = None) -> Dict[str, bool]:
+    result = {"earthquake_sent": False, "advisories_sent": False}
     if not earthquake and not advisories:
-        return
+        return result
     
     alert_time = nowIso()
     recipients = [r.strip() for r in EMAIL_RECIPIENTS.split(",") if r.strip()]
     if not recipients:
         print("  [Email] No recipients configured in EMAIL_RECIPIENTS")
-        return
+        return result
     
     if earthquake:
         subject = "EARTHQUAKE ALERT:"
         html = formatEarthquakeEmail(earthquake, alert_time)
-        sendEmail(subject, html, recipients)
+        result["earthquake_sent"] = sendEmail(subject, html, recipients)
     
     if advisories:
         advisory_types = {str(ad.get("type", "")).strip() for ad in advisories}
@@ -169,7 +245,9 @@ def sendAlertEmail(earthquake: Optional[Dict[str, Any]] = None,
         else:
             subject = "CRISIS WEATHER ALERTS"
         html = formatPagasaEmail(advisories, alert_time)
-        sendEmail(subject, html, recipients)
+        result["advisories_sent"] = sendEmail(subject, html, recipients)
+
+    return result
 
 
 def main():
@@ -177,6 +255,7 @@ def main():
     state = loadState()
     
     seen_quakes = set(state.get("seen_quake_ids", []))
+    pending_quake_events: List[Dict[str, Any]] = state.get("pending_quake_events", [])
     seen_pagasa = set(state.get("seen_pagasa_ids", []))
     no_new_cycles = int(state.get("no_new_cycles", 0))
     last_top_id = state.get("last_top_id", "")
@@ -192,13 +271,14 @@ def main():
     last_refresh_mono = 0.0
 
     print("=" * 70)
-    print("PHIVOLCS + PAGASA Alert System with Email Integration")
+    print("NCR Alert System (PHIVOLCS + PAGASA) with Email Integration")
     print("=" * 70)
     print(f"Poll Interval      : {PollIntervalSec}s")
     print(f"PHIVOLCS API       : {PhivolcsAPIurl}")
     print(f"Smart Refresh      : {'Enabled' if smartRefresh else 'Disabled'}")
     print(f"Cold Start Suppress: {'Yes' if ColdStartSupress else 'No'}")
     print(f"Max Event Age      : {MaxEventAgeMin} minutes" if MaxEventAgeMin > 0 else "Max Event Age      : Unlimited")
+    print(f"USGS Confirmation  : {'Enabled' if USGSConfirmationEnabled else 'Disabled'}")
     print(f"\nEmail Configuration:")
     print(f"  Enabled          : {'Yes' if EMAIL_ENABLED else 'No'}")
     print(f"  SMTP Host        : {SMTP_HOST}:{SMTP_PORT}")
@@ -213,7 +293,7 @@ def main():
             timestamp = nowIso()
             
             (
-                latest_earthquake,
+                pending_earthquakes,
                 meta,
                 seen_quakes,
                 last_alerted_dt,
@@ -235,6 +315,39 @@ def main():
                 NoNewCyclesBeforeRefresh,
                 MinRefreshGapSec
             )
+
+            pending_by_id: Dict[str, Dict[str, Any]] = {}
+            for quake in pending_quake_events:
+                quake_id = str(quake.get("id", "")).strip()
+                if not quake_id:
+                    continue
+                if f"PHIVOLCS-{quake_id}" in seen_quakes:
+                    continue
+                if not meetsAlertCriteria(quake):
+                    continue
+                pending_by_id[quake_id] = quake
+
+            for quake in pending_earthquakes:
+                quake_id = str(quake.get("id", "")).strip()
+                if not quake_id:
+                    continue
+                if f"PHIVOLCS-{quake_id}" in seen_quakes:
+                    continue
+                if not meetsAlertCriteria(quake):
+                    continue
+                pending_by_id[quake_id] = quake
+
+            pending_quake_events = sorted(pending_by_id.values(), key=quakeSortKey)
+            if MaxPendingQuakeEvents > 0 and len(pending_quake_events) > MaxPendingQuakeEvents:
+                pending_quake_events = pending_quake_events[-MaxPendingQuakeEvents:]
+
+            pending_quake_events = annotateUSGSConfirmation(
+                pending_quake_events,
+                enabled=USGSConfirmationEnabled,
+                time_window_minutes=USGSMatchTimeWindowMin,
+                max_distance_km=USGSMatchMaxDistanceKm,
+                magnitude_tolerance=USGSMatchMagTolerance,
+            )
             
             new_advisories, hrw_status, seen_pagasa = process_advisories(
                 session,
@@ -242,28 +355,42 @@ def main():
                 seen_pagasa
             )
             
-            if latest_earthquake or new_advisories:
-                lines = [f"=== PH Alerts – New items @ {timestamp} ===\n"]
-                if latest_earthquake:
-                    lines.append(formatEarthquakeConsole(latest_earthquake))
-                    lines.append("")
-                if new_advisories:
-                    lines.append(formatPagasaConsole(new_advisories))
-                    lines.append("")
-                lines.append("Sources: PHIVOLCS (via local API); PAGASA Visayas PRSD page.")
-                
+            if pending_quake_events or new_advisories:
                 label_parts = []
-                if latest_earthquake:
-                    label_parts.append("Quake")
+                if pending_quake_events:
+                    label_parts.append(f"Quake x{len(pending_quake_events)}")
                 if new_advisories:
                     label_parts.append("PAGASA Advisory")
                 label = " & ".join(label_parts)
                 
                 print(f"[{timestamp}] NEW items found → {label}")
-                print("\n".join(lines))
-                
-                print(f"[{timestamp}] Sending email alerts...")
-                sendAlertEmail(earthquake=latest_earthquake, advisories=new_advisories)
+
+                if pending_quake_events:
+                    print(f"[{timestamp}] Pending Cebu earthquake alerts: {len(pending_quake_events)}")
+                    while pending_quake_events:
+                        quake = pending_quake_events[0]
+                        quake_id = str(quake.get("id", "")).strip()
+
+                        print(formatEarthquakeConsole(quake))
+                        print(f"[{timestamp}] Sending earthquake email alert...")
+                        email_result = sendAlertEmail(earthquake=quake)
+                        if not email_result.get("earthquake_sent"):
+                            print(f"[{timestamp}] Earthquake email failed. Will retry this event in the next cycle.")
+                            break
+
+                        if quake_id:
+                            seen_quakes.add(f"PHIVOLCS-{quake_id}")
+
+                        quake_dt = parseDT(str(quake.get("time", "")))
+                        if quake_dt and (last_alerted_dt is None or quake_dt > last_alerted_dt):
+                            last_alerted_dt = quake_dt
+
+                        pending_quake_events.pop(0)
+
+                if new_advisories:
+                    print(formatPagasaConsole(new_advisories))
+                    print(f"[{timestamp}] Sending PAGASA advisory email alerts...")
+                    sendAlertEmail(advisories=new_advisories)
             else:
                 cached = meta.get("cached")
                 last_updated = meta.get("lastUpdated")
@@ -275,6 +402,7 @@ def main():
             
             saveState({
                 "seen_quake_ids": sorted(seen_quakes),
+                "pending_quake_events": [serializeQuakeForState(q) for q in pending_quake_events],
                 "seen_pagasa_ids": sorted(seen_pagasa),
                 "no_new_cycles": int(no_new_cycles),
                 "last_top_id": last_top_id,

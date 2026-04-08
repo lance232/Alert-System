@@ -16,7 +16,7 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS", "")
 EMAIL_APP_PASSWORD = os.getenv("EMAIL_APP_PASSWORD", "")
 EMAIL_RECIPIENTS = os.getenv("EMAIL_RECIPIENTS", "")
-EMAIL_FROM_NAME = os.getenv("EMAIL_FROM_NAME", "PH Alert System")
+EMAIL_FROM_NAME = os.getenv("EMAIL_FROM_NAME", "NCR Alert System")
 
 
 def send_test_email(subject: str, html_content: str) -> bool:
@@ -165,7 +165,7 @@ def generate_test_email_html(alert_type: str, alert_time: str) -> str:
 
 def main():
     print("=" * 70)
-    print("PH Alert System - Email Test (Format matches AlertSystem.py)")
+    print("NCR Alert System - Email Test (Format matches AlertSystem.py)")
     print("=" * 70)
     print()
     

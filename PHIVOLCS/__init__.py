@@ -4,7 +4,8 @@ from .parser import (
     formatEarthquakeEmail,
     formatEarthquakeConsole,
     process_earthquakes,
-    meetsAlertCriteria
+    meetsAlertCriteria,
+    annotateUSGSConfirmation,
 )
 
 __all__ = [
@@ -13,5 +14,6 @@ __all__ = [
     "formatEarthquakeEmail",
     "formatEarthquakeConsole",
     "process_earthquakes",
-    "meetsAlertCriteria"
+    "meetsAlertCriteria",
+    "annotateUSGSConfirmation",
 ]

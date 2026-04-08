@@ -41,6 +41,28 @@ def extractSnippet(text: str, pattern: str, window: int = 220) -> str:
     return text[start:end].strip()
 
 
+def extractSection(text: str, start_pattern: str, end_pattern: str) -> str:
+    start_match = re.search(start_pattern, text, flags=re.I)
+    if not start_match:
+        return ""
+
+    start = start_match.start()
+    tail = text[start:]
+    end_match = re.search(end_pattern, tail, flags=re.I)
+    if not end_match:
+        return tail.strip()
+    return tail[:end_match.start()].strip()
+
+
+def hasNoHeavyRainfallWarning(text: str) -> bool:
+    negative_patterns = [
+        r"\bthere\s+is\s+no\s+heavy\s+rainfall\s+warning\s+issued\b",
+        r"\bno\s+heavy\s+rainfall\s+warning\b",
+        r"\bheavy\s+rainfall\s+warning\s*[:\-]?\s*none\b",
+    ]
+    return any(re.search(pattern, text, flags=re.I) for pattern in negative_patterns)
+
+
 def extractIssuedTimestamp(text: str) -> Optional[str]:
     candidates = [
         r"issued\s+at\s+(.{8,80}?)(?=\s+(?:thunderstorm|heavy\s+rainfall|special\s+forecast|tropical|within\s+\d+\s+hours|$)|[.;])",
@@ -190,15 +212,22 @@ def parse_visprsd_cebu_advisories(html: str) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     affected_areas = extractAffectedCebuAreas(page_text)
 
-    if re.search(r"\bheavy\s+rainfall\s+warning\b", page_text, flags=re.I) and affected_areas:
-        warning_level = extractWarningLevel(page_text)
+    hrw_section = extractSection(
+        page_text,
+        r"\bheavy\s+rainfall\s+warning\b",
+        r"\b(?:thunderstorm|special\s+forecast|tropical\s+cyclone|weather\s+advisory|$)\b",
+    )
+    hrw_areas = extractAffectedCebuAreas(hrw_section) if hrw_section else []
+
+    if hrw_section and (not hasNoHeavyRainfallWarning(hrw_section)) and hrw_areas:
+        warning_level = extractWarningLevel(hrw_section)
         out.append({
             "source": "PAGASA",
             "type": "Heavy Rainfall Warning",
             "warning_level": warning_level,
-            "affected_areas": affected_areas,
-            "issued": extractIssuedTimestamp(page_text),
-            "raw": extractSnippet(page_text, r"\bheavy\s+rainfall\s+warning\b"),
+            "affected_areas": hrw_areas,
+            "issued": extractIssuedTimestamp(hrw_section) or extractIssuedTimestamp(page_text),
+            "raw": hrw_section,
         })
 
     has_thunderstorm_warning = bool(

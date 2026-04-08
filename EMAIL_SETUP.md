@@ -5,11 +5,15 @@ Your alert system now sends automatic emails via **Gmail SMTP** to Outlook recip
 - A new earthquake is detected from PHIVOLCS
 - A new weather advisory for Cebu is detected from PAGASA
 
+Earthquake alerts remain Cebu-only with magnitude **greater than 4.0**.
+
 ## Features Added
 ✅ HTML-formatted email alerts with professional styling  
 ✅ Gmail SMTP with app password authentication  
 ✅ Support for multiple recipients (Outlook, Gmail, etc.)  
 ✅ Separate emails for earthquakes and weather advisories  
+✅ Missed Cebu earthquake alerts are queued and retried on the next cycle  
+✅ Queue keeps only the latest 5 qualifying quake events (configurable)  
 ✅ Email delivery confirmation in console logs  
 ✅ Error handling and retry logic  
 
@@ -56,7 +60,7 @@ EMAIL_APP_PASSWORD=abcdefghijklmnop
 EMAIL_RECIPIENTS=user1@outlook.com,user2@company.com,admin@yourorg.com
 
 # Optional: Customize sender name
-EMAIL_FROM_NAME=PH Alert System - Your Organization
+EMAIL_FROM_NAME=NCR Alert System - Your Organization
 ```
 
 ### 3. Install Python Dependencies
@@ -107,8 +111,12 @@ python AlertSystem.py
 | `EMAIL_ADDRESS` | Your Gmail address | `alerts@gmail.com` |
 | `EMAIL_APP_PASSWORD` | Gmail app password | `abcdefghijklmnop` |
 | `EMAIL_RECIPIENTS` | Comma-separated recipients | `user1@outlook.com,user2@outlook.com` |
-| `EMAIL_FROM_NAME` | Display name | `PH Alert System` |
+| `EMAIL_FROM_NAME` | Display name | `NCR Alert System` |
 | `EMAIL_ENABLED` | Enable/disable emails | `1` (enabled) or `0` (disabled) |
+| `USGS_CONFIRMATION_ENABLED` | Enable/disable USGS confirmation | `1` |
+| `USGS_MATCH_TIME_WINDOW_MIN` | Max time delta in minutes for PHIVOLCS-USGS match | `20` |
+| `USGS_MATCH_MAX_DISTANCE_KM` | Max distance in km for PHIVOLCS-USGS match | `180` |
+| `USGS_MATCH_MAG_TOLERANCE` | Max magnitude difference for PHIVOLCS-USGS match | `0.8` |
 
 ---
 
