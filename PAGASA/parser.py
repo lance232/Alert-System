@@ -2,7 +2,7 @@ import re
 import time
 import requests
 from html import escape
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, FeatureNotFound
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 
@@ -15,6 +15,11 @@ TARGET_CEBU_AREAS = [
     ("Consolacion", [r"\bconsolacion\b"]),
     ("Liloan", [r"\bliloan\b"]),
     ("Minglanilla", [r"\bminglanilla\b"]),
+]
+
+CEBU_CITY_PATTERNS = [
+    r"\bcebu\s*city\b",
+    r"(?<!\w)#\s*cebu\b",
 ]
 
 
@@ -30,6 +35,14 @@ def parseDT(text: str) -> Optional[datetime]:
 
 def normalizeText(text: str) -> str:
     return re.sub(r"\s+", " ", text or "").strip()
+
+
+def buildSoup(html: str) -> BeautifulSoup:
+    try:
+        return BeautifulSoup(html, "lxml")
+    except FeatureNotFound:
+        # Fallback for environments where lxml is not installed.
+        return BeautifulSoup(html, "html.parser")
 
 
 def extractSnippet(text: str, pattern: str, window: int = 220) -> str:
@@ -98,6 +111,10 @@ def extractAffectedCebuAreas(text: str) -> List[str]:
     return unique
 
 
+def isCebuCityMentioned(text: str) -> bool:
+    return any(re.search(pattern, text, flags=re.I) for pattern in CEBU_CITY_PATTERNS)
+
+
 def extractSignalLevel(text: str) -> str:
     patterns = [
         r"\bTCWS\s*#?\s*(\d)\b",
@@ -157,27 +174,76 @@ def extractThunderstormOutlook(text: str) -> str:
     return "UNSPECIFIED"
 
 
+def extractThunderstormBulletin(text: str) -> Optional[Dict[str, Any]]:
+    # Parse concrete thunderstorm bulletin entries (e.g., "Thunderstorm Watch #VISPRSD")
+    # to avoid false positives from tab labels/navigation text.
+    bulletin_pattern = re.compile(
+        r"\bThunderstorm\s+(Information|Advisory|Watch|Warning)\s*#?\s*VISPRSD\b.*?"
+        r"(?=\bThunderstorm\s+(?:Information|Advisory|Watch|Warning)\s*#?\s*VISPRSD\b|\bSpecial\s+Forecasts?\b|$)",
+        flags=re.I,
+    )
+
+    priority = {
+        "Warning": 4,
+        "Advisory": 3,
+        "Watch": 2,
+        "Information": 1,
+    }
+
+    candidates: List[Tuple[int, float, int, Dict[str, Any]]] = []
+
+    for idx, match in enumerate(bulletin_pattern.finditer(text)):
+        bulletin_text = normalizeText(match.group(0))
+        if not isCebuCityMentioned(bulletin_text):
+            continue
+        affected_areas = ["Cebu City"]
+
+        outlook = extractThunderstormOutlook(bulletin_text)
+        if outlook == "LESS LIKELY":
+            continue
+
+        subtype = match.group(1).title()
+        issued = extractIssuedTimestamp(bulletin_text)
+        issued_dt = parseDT(issued or "")
+        issued_score = issued_dt.timestamp() if issued_dt else 0.0
+
+        payload = {
+            "subtype": subtype,
+            "outlook": outlook,
+            "affected_areas": affected_areas,
+            "issued": issued,
+            "raw": bulletin_text,
+        }
+
+        candidates.append((priority.get(subtype, 0), issued_score, -idx, payload))
+
+    if not candidates:
+        return None
+
+    candidates.sort(reverse=True)
+    return candidates[0][3]
+
+
 def fetch_pagasa_visprsd(
     session: requests.Session,
     endpoints: List[str] = None
 ) -> str:
     if endpoints is None:
         endpoints = [
-            "https://bagong.pagasa.dost.gov.ph/regional-forecast/visprsd",
             "https://www.pagasa.dost.gov.ph/regional-forecast/visprsd",
         ]
     
-    lastError = None
+    errors: List[str] = []
     for url in endpoints:
         try:
             Read = session.get(url, timeout=(10, 30))
             Read.raise_for_status()
             return Read.text
         except Exception as Exempted:
-            lastError = Exempted
+            errors.append(f"{url} -> {type(Exempted).__name__}: {Exempted}")
             time.sleep(2)
     
-    raise RuntimeError(f"PAGASA fetch failed on all endpoints: {lastError}")
+    raise RuntimeError("PAGASA fetch failed on all endpoints: " + " | ".join(errors))
 
 
 def fetch_pagasa_tc_bulletin(
@@ -187,24 +253,23 @@ def fetch_pagasa_tc_bulletin(
     if endpoints is None:
         endpoints = [
             "https://www.pagasa.dost.gov.ph/tropical-cyclone/severe-weather-bulletin",
-            "https://bagong.pagasa.dost.gov.ph/tropical-cyclone/severe-weather-bulletin",
         ]
     
-    lastError = None
+    errors: List[str] = []
     for url in endpoints:
         try:
             Read = session.get(url, timeout=(10, 30))
             Read.raise_for_status()
             return Read.text
         except Exception as Exempted:
-            lastError = Exempted
+            errors.append(f"{url} -> {type(Exempted).__name__}: {Exempted}")
             time.sleep(2)
     
-    raise RuntimeError(f"PAGASA TC bulletin fetch failed on all endpoints: {lastError}")
+    raise RuntimeError("PAGASA TC bulletin fetch failed on all endpoints: " + " | ".join(errors))
 
 
 def parse_visprsd_cebu_advisories(html: str) -> List[Dict[str, Any]]:
-    soup = BeautifulSoup(html, "lxml")
+    soup = buildSoup(html)
     page_text = normalizeText(soup.get_text(" ", strip=True))
     if not page_text:
         return []
@@ -217,7 +282,7 @@ def parse_visprsd_cebu_advisories(html: str) -> List[Dict[str, Any]]:
         r"\bheavy\s+rainfall\s+warning\b",
         r"\b(?:thunderstorm|special\s+forecast|tropical\s+cyclone|weather\s+advisory|$)\b",
     )
-    hrw_areas = extractAffectedCebuAreas(hrw_section) if hrw_section else []
+    hrw_areas = ["Cebu City"] if hrw_section and isCebuCityMentioned(hrw_section) else []
 
     if hrw_section and (not hasNoHeavyRainfallWarning(hrw_section)) and hrw_areas:
         warning_level = extractWarningLevel(hrw_section)
@@ -230,48 +295,28 @@ def parse_visprsd_cebu_advisories(html: str) -> List[Dict[str, Any]]:
             "raw": hrw_section,
         })
 
-    has_thunderstorm_warning = bool(
-        re.search(r"\bthunderstorm\s+(?:warning|advisory|information)\b", page_text, flags=re.I)
-    )
-    has_thunderstorm_outlook = bool(
-        re.search(r"\bthunderstorm\s+is\s+(?:very\s+likely|likely|less\s+likely)\s+to\s+develop\b", page_text, flags=re.I)
-    )
-    if (has_thunderstorm_warning or has_thunderstorm_outlook) and affected_areas:
-        outlook = extractThunderstormOutlook(page_text)
-        # Ignore low-confidence outlook bulletins to reduce noise.
-        if outlook != "LESS LIKELY":
-            out.append({
-                "source": "PAGASA",
-                "type": "Thunderstorm Warning",
-                "warning_level": extractWarningLevel(page_text),
-                "thunderstorm_outlook": outlook,
-                "affected_areas": affected_areas,
-                "issued": extractIssuedTimestamp(page_text),
-                "raw": extractSnippet(page_text, r"\bthunderstorm\s+(?:warning|advisory|information|is\s+(?:very\s+likely|likely|less\s+likely)\s+to\s+develop)\b"),
-            })
-
-    has_tropical_system = bool(
-        re.search(r"\b(Tropical\s+Depression|Tropical\s+Storm|Typhoon)\b", page_text, flags=re.I)
-    )
-    signal_level = extractSignalLevel(page_text)
-    if has_tropical_system and affected_areas and (signal_level != "None" or hasHeavyRainExpectation(page_text)):
+    thunderstorm_bulletin = extractThunderstormBulletin(page_text)
+    if thunderstorm_bulletin:
+        thunderstorm_label = str(thunderstorm_bulletin.get("subtype", "Warning")).upper()
         out.append({
             "source": "PAGASA",
-            "type": "Tropical Cyclone Alert",
-            "weather_system": extractWeatherSystem(page_text),
-            "current_location": extractCurrentLocation(page_text),
-            "signal_level": signal_level,
-            "affected_areas": affected_areas,
-            "issued": extractIssuedTimestamp(page_text),
-            "raw": extractSnippet(page_text, r"\b(Tropical\s+Depression|Tropical\s+Storm|Typhoon)\b"),
+            "type": "Thunderstorm Warning",
+            "warning_level": thunderstorm_label,
+            "thunderstorm_outlook": thunderstorm_bulletin.get("outlook", "UNSPECIFIED"),
+            "affected_areas": thunderstorm_bulletin.get("affected_areas", []),
+            "issued": thunderstorm_bulletin.get("issued") or extractIssuedTimestamp(page_text),
+            "raw": thunderstorm_bulletin.get("raw") or extractSnippet(page_text, r"\bthunderstorm\b"),
         })
+
+    # Tropical cyclone alerts are sourced from the dedicated TC bulletin parser
+    # to avoid false positives from generic PRSD page mentions.
 
     return out
 
 
 def parse_tc_bulletin_cebu_alerts(html: str) -> List[Dict[str, Any]]:
     """Parse tropical cyclone bulletin for Cebu-area alerts"""
-    soup = BeautifulSoup(html, "lxml")
+    soup = buildSoup(html)
     page_text = normalizeText(soup.get_text(" ", strip=True))
     if not page_text:
         return []
@@ -291,8 +336,8 @@ def parse_tc_bulletin_cebu_alerts(html: str) -> List[Dict[str, Any]]:
     
     if has_tropical_system and affected_areas:
         signal_level = extractSignalLevel(page_text)
-        # Only alert if there's a signal level or heavy rain expected
-        if signal_level != "None" or hasHeavyRainExpectation(page_text):
+        # Hardening: require explicit raised signal level for Cebu-area alerts.
+        if signal_level != "None":
             out.append({
                 "source": "PAGASA",
                 "type": "Tropical Cyclone Alert",
@@ -308,7 +353,7 @@ def parse_tc_bulletin_cebu_alerts(html: str) -> List[Dict[str, Any]]:
 
 
 def ExtractHRWStatus(html: str) -> str:
-    soup = BeautifulSoup(html, "lxml")
+    soup = buildSoup(html)
     text = re.sub(r"\s+", " ", soup.get_text(" ", strip=True))
 
     noAdvisory = re.search(
@@ -484,6 +529,10 @@ def process_advisories(
     seen_pagasa_ids: set,
     tc_endpoints: List[str] = None
 ) -> Tuple[List[Dict[str, Any]], str, set]:
+    def short_error(err: Exception, max_len: int = 220) -> str:
+        text = f"{type(err).__name__}: {err}"
+        return text if len(text) <= max_len else text[: max_len - 3] + "..."
+
     try:
         # Fetch PRSD page for Heavy Rainfall Warnings
         vis_html = fetch_pagasa_visprsd(session, endpoints)
@@ -494,16 +543,15 @@ def process_advisories(
         if tc_endpoints is None:
             tc_endpoints = [
                 "https://www.pagasa.dost.gov.ph/tropical-cyclone/severe-weather-bulletin",
-                "https://bagong.pagasa.dost.gov.ph/tropical-cyclone/severe-weather-bulletin",
             ]
         
         try:
             tc_html = fetch_pagasa_tc_bulletin(session, tc_endpoints)
             tc_advisories = parse_tc_bulletin_cebu_alerts(tc_html)
             advisories.extend(tc_advisories)
-        except Exception:
-            # TC bulletin fetch failed, continue with PRSD-only results
-            pass
+        except Exception as tc_error:
+            # TC bulletin is secondary for this flow; log diagnostic but continue with PRSD results.
+            print(f"[PAGASA] TC bulletin fetch skipped this cycle: {short_error(tc_error)}")
         
         new_advisories: List[Dict[str, Any]] = []
         for advisory in advisories:
@@ -523,5 +571,7 @@ def process_advisories(
         
         return new_advisories, hrw_status, seen_pagasa_ids
         
-    except Exception:
-        return [], "HRW: (status unavailable this cycle)", seen_pagasa_ids
+    except Exception as err:
+        diagnostic = short_error(err)
+        print(f"[PAGASA] process_advisories failed: {diagnostic}")
+        return [], f"HRW: (status unavailable this cycle: {diagnostic})", seen_pagasa_ids

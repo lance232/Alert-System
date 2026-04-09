@@ -102,7 +102,6 @@ EMAIL_ENABLED = envBool("EMAIL_ENABLED", True)
 EMAIL_FROM_NAME = os.getenv("EMAIL_FROM_NAME", "NCR Alert System")
 
 PAGASA_endpoints = [
-    "https://bagong.pagasa.dost.gov.ph/regional-forecast/visprsd",
     "https://www.pagasa.dost.gov.ph/regional-forecast/visprsd",
 ]
 
