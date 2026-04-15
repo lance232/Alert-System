@@ -127,6 +127,7 @@ def makeSession() -> requests.Session:
     Sessions.mount("https://", HTTPAdapter(max_retries=retry))
     return Sessions
 
+
 def loadState() -> Dict[str, Any]:
     if os.path.exists(stateFile):
         try:

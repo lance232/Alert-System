@@ -476,7 +476,11 @@ def formatPagasaEmail(advisories: List[Dict[str, Any]], alert_time: str) -> str:
                 {advisory_html}
             </div>
             <div class="footer">
-                <p><strong>Source:</strong> PAGASA Visayas PRSD (Philippine Atmospheric, Geophysical and Astronomical Services Administration)</p>
+                <p><strong>Source:</strong>
+                    <a href="https://www.pagasa.dost.gov.ph/regional-forecast/visprsd">PAGASA Visayas PRSD</a>
+                    and
+                    <a href="https://www.pagasa.dost.gov.ph/tropical-cyclone/severe-weather-bulletin">PAGASA Severe Weather Bulletin</a>
+                </p>
                 <p><strong>Alert Time:</strong> {safe_alert_time}</p>
                 <p><em>This is an automated crisis alert.</em></p>
             </div>

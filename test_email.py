@@ -18,6 +18,9 @@ EMAIL_APP_PASSWORD = os.getenv("EMAIL_APP_PASSWORD", "")
 EMAIL_RECIPIENTS = os.getenv("EMAIL_RECIPIENTS", "")
 EMAIL_FROM_NAME = os.getenv("EMAIL_FROM_NAME", "NCR Alert System")
 
+SUBJECT_EARTHQUAKE = "Test Email: Earthquake Alert"
+SUBJECT_WEATHER = "Test Email: Weather Crisis"
+
 
 def send_test_email(subject: str, html_content: str) -> bool:
     recipients = [r.strip() for r in EMAIL_RECIPIENTS.split(",") if r.strip()]
@@ -66,14 +69,14 @@ def send_test_email(subject: str, html_content: str) -> bool:
 
 
 def generate_test_email_html(alert_type: str, alert_time: str) -> str:
-    """Generate HTML matching AlertSystem.py formatPagasaEmail format"""
+    """Generate weather HTML template matching AlertSystem.py formatPagasaEmail format."""
     
     if alert_type == "HEAVY_RAINFALL":
         advisory_html = """
             <div class="advisory-box">
-                <h3>HEAVY RAINFALL WARNING (TEST_EMAIL)</h3>
-                <div class="info-row"><span class="label">Warning Level:</span> ORANGE Rainfall Warning</div>
-                <div class="info-row"><span class="label">Affected Area:</span> Cebu City / Nearby Cities</div>
+                <h3>HEAVY RAINFALL WARNING</h3>
+                <div class="info-row"><span class="label">Warning Level:</span> Per latest PAGASA advisory</div>
+                <div class="info-row"><span class="label">Affected Area:</span> Per latest PAGASA advisory</div>
                 <div class="info-row"><span class="label">Issued By:</span> PAGASA</div>
                 <div class="info-row"><span class="label">Date &amp; Time:</span> {alert_time}</div>
                 <div class="info-row">
@@ -90,11 +93,11 @@ def generate_test_email_html(alert_type: str, alert_time: str) -> str:
     elif alert_type == "TROPICAL_CYCLONE":
         advisory_html = """
             <div class="advisory-box">
-                <h3>TROPICAL DEPRESSION / TYPHOON ALERTS (TEST_EMAIL)</h3>
-                <div class="info-row"><span class="label">Weather System:</span> Tropical Storm - SAMPLE</div>
-                <div class="info-row"><span class="label">Current Location:</span> Location per PAGASA</div>
-                <div class="info-row"><span class="label">Signal Level (if any):</span> TCWS #1</div>
-                <div class="info-row"><span class="label">Areas Affected:</span> Cebu City / Nearby Cities</div>
+                <h3>TROPICAL DEPRESSION / TYPHOON ALERTS</h3>
+                <div class="info-row"><span class="label">Weather System:</span> Per latest PAGASA advisory</div>
+                <div class="info-row"><span class="label">Current Location:</span> Per latest PAGASA advisory</div>
+                <div class="info-row"><span class="label">Signal Level (if any):</span> Per latest PAGASA advisory</div>
+                <div class="info-row"><span class="label">Areas Affected:</span> Per latest PAGASA advisory</div>
                 <div class="info-row"><span class="label">Date &amp; Time:</span> as of {alert_time}</div>
                 <div class="info-row">
                     <span class="label">Safety Precautions:</span>
@@ -109,9 +112,9 @@ def generate_test_email_html(alert_type: str, alert_time: str) -> str:
     elif alert_type == "THUNDERSTORM":
         advisory_html = """
             <div class="advisory-box">
-                <h3>THUNDERSTORM WARNING (TEST_EMAIL)</h3>
-                <div class="info-row"><span class="label">Warning Level:</span> YELLOW</div>
-                <div class="info-row"><span class="label">Affected Area:</span> Cebu City / Nearby Cities</div>
+                <h3>THUNDERSTORM WARNING</h3>
+                <div class="info-row"><span class="label">Warning Level:</span> Per latest PAGASA advisory</div>
+                <div class="info-row"><span class="label">Affected Area:</span> Per latest PAGASA advisory</div>
                 <div class="info-row"><span class="label">Issued By:</span> PAGASA</div>
                 <div class="info-row"><span class="label">Date &amp; Time:</span> {alert_time}</div>
                 <div class="info-row">
@@ -152,7 +155,11 @@ def generate_test_email_html(alert_type: str, alert_time: str) -> str:
                 {advisory_html}
             </div>
             <div class="footer">
-                <p><strong>Source:</strong> PAGASA Visayas PRSD (Philippine Atmospheric, Geophysical and Astronomical Services Administration)</p>
+                <p><strong>Source:</strong>
+                    <a href="https://www.pagasa.dost.gov.ph/regional-forecast/visprsd">PAGASA Visayas PRSD</a>
+                    and
+                    <a href="https://www.pagasa.dost.gov.ph/tropical-cyclone/severe-weather-bulletin">PAGASA Severe Weather Bulletin</a>
+                </p>
                 <p><strong>Alert Time:</strong> {alert_time}</p>
                 <p><em>This is an automated crisis alert.</em></p>
             </div>
@@ -161,6 +168,63 @@ def generate_test_email_html(alert_type: str, alert_time: str) -> str:
     </html>
     """
     return html
+
+
+def generate_earthquake_test_email_html(alert_time: str) -> str:
+    """Generate earthquake HTML template matching PHIVOLCS email format."""
+
+    return f"""
+    <html>
+    <head>
+        <style>
+            body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+            .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+            .header {{ background-color: #d32f2f; color: white; padding: 15px; border-radius: 5px; }}
+            .content {{ background-color: #f5f5f5; padding: 20px; margin-top: 10px; border-radius: 5px; }}
+            .info-row {{ margin: 10px 0; padding: 8px; background-color: white; border-left: 4px solid #d32f2f; }}
+            .label {{ font-weight: bold; color: #d32f2f; }}
+            ul {{ margin-top: 8px; }}
+            li {{ margin-bottom: 6px; }}
+            .footer {{ margin-top: 20px; font-size: 0.9em; color: #666; border-top: 1px solid #ddd; padding-top: 10px; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h2>EARTHQUAKE ALERTS</h2>
+            </div>
+            <div class="content">
+                <div class="info-row">
+                    <span class="label">Date &amp; Time:</span> Per latest PHIVOLCS advisory
+                </div>
+                <div class="info-row">
+                    <span class="label">Magnitude:</span> Per latest PHIVOLCS advisory
+                </div>
+                <div class="info-row">
+                    <span class="label">Epicenter Location:</span> Per latest PHIVOLCS advisory
+                </div>
+                <div class="info-row">
+                    <span class="label">Intensity Felt in Cebu:</span> Per latest PHIVOLCS advisory
+                </div>
+                <div class="info-row">
+                    <span class="label">Safety Precautions:</span>
+                    <ul>
+                        <li>Duck, Cover, and Hold during the shaking.</li>
+                        <li>Stay calm and be alert for possible aftershocks.</li>
+                        <li>Check surroundings for hazards (falling objects, cracks).</li>
+                        <li>Follow instructions from authorities.</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer">
+                <p><strong>Source:</strong> <a href="https://earthquake.phivolcs.dost.gov.ph/">PHIVOLCS Earthquake Information</a></p>
+                <p><strong>Alert Time:</strong> {alert_time}</p>
+                <p><em>This is an automated crisis alert.</em></p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
 
 
 def main():
@@ -184,147 +248,46 @@ def main():
     
     if choice == "1":
         print("\n📨 Sending EARTHQUAKE ALERT test email...")
-        print(f"   Subject: EARTHQUAKE ALERT: (TEST_EMAIL)")
-        # Format matches PHIVOLCS formatEarthquakeEmail from AlertSystem.py
-        html = f"""
-        <html>
-        <head>
-            <style>
-                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                .header {{ background-color: #d32f2f; color: white; padding: 15px; border-radius: 5px; }}
-                .content {{ background-color: #f5f5f5; padding: 20px; margin-top: 10px; border-radius: 5px; }}
-                .info-row {{ margin: 10px 0; padding: 8px; background-color: white; border-left: 4px solid #d32f2f; }}
-                .label {{ font-weight: bold; color: #d32f2f; }}
-                ul {{ margin-top: 8px; }}
-                li {{ margin-bottom: 6px; }}
-                .footer {{ margin-top: 20px; font-size: 0.9em; color: #666; border-top: 1px solid #ddd; padding-top: 10px; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <h2>EARTHQUAKE ALERTS (TEST_EMAIL)</h2>
-                </div>
-                <div class="content">
-                    <div class="info-row">
-                        <span class="label">Date &amp; Time:</span> 2026-03-26T14:30:15+08:00
-                    </div>
-                    <div class="info-row">
-                        <span class="label">Magnitude:</span> 6.2
-                    </div>
-                    <div class="info-row">
-                        <span class="label">Epicenter Location:</span> 15 km E of Cebu City
-                    </div>
-                    <div class="info-row">
-                        <span class="label">Intensity Felt in Cebu:</span> Intensity IV
-                    </div>
-                    <div class="info-row">
-                        <span class="label">Safety Precautions:</span>
-                        <ul>
-                            <li>Stay calm and be alert for possible aftershocks.</li>
-                            <li>Check surroundings for hazards (falling objects, cracks).</li>
-                            <li>Follow instructions from authorities.</li>
-                        </ul>
-                    </div>
-                </div>
-                <div class="footer">
-                    <p><strong>Source:</strong> PHIVOLCS (Philippine Institute of Volcanology and Seismology)</p>
-                    <p><strong>Alert Time:</strong> {alert_time}</p>
-                    <p><em>This is an automated crisis alert.</em></p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
-        send_test_email("EARTHQUAKE ALERT: (TEST_EMAIL)", html)
+        print(f"   Subject: {SUBJECT_EARTHQUAKE}")
+        html = generate_earthquake_test_email_html(alert_time)
+        send_test_email(SUBJECT_EARTHQUAKE, html)
         
     elif choice == "2":
         print("\n📨 Sending HEAVY RAINFALL WARNING test email...")
-        print(f"   Subject: HEAVY RAINFALL WARNING (TEST_EMAIL)")
+        print(f"   Subject: {SUBJECT_WEATHER}")
         html = generate_test_email_html("HEAVY_RAINFALL", alert_time)
-        send_test_email("HEAVY RAINFALL WARNING (TEST_EMAIL)", html)
+        send_test_email(SUBJECT_WEATHER, html)
 
     elif choice == "3":
         print("\n📨 Sending TROPICAL DEPRESSION / TYPHOON ALERTS test email...")
-        print(f"   Subject: TROPICAL DEPRESSION / TYPHOON ALERTS (TEST_EMAIL)")
+        print(f"   Subject: {SUBJECT_WEATHER}")
         html = generate_test_email_html("TROPICAL_CYCLONE", alert_time)
-        send_test_email("TROPICAL DEPRESSION / TYPHOON ALERTS (TEST_EMAIL)", html)
+        send_test_email(SUBJECT_WEATHER, html)
         
     elif choice == "4":
         print("\n📨 Sending THUNDERSTORM WARNING test email...")
-        print(f"   Subject: THUNDERSTORM WARNING (TEST_EMAIL)")
+        print(f"   Subject: {SUBJECT_WEATHER}")
         html = generate_test_email_html("THUNDERSTORM", alert_time)
-        send_test_email("THUNDERSTORM WARNING (TEST_EMAIL)", html)
+        send_test_email(SUBJECT_WEATHER, html)
 
     elif choice == "5":
         print("\n📨 Sending all test emails...")
         
         print("\n1️⃣ Sending EARTHQUAKE ALERT...")
-        earthquake_html = f"""
-        <html>
-        <head>
-            <style>
-                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                .header {{ background-color: #d32f2f; color: white; padding: 15px; border-radius: 5px; }}
-                .content {{ background-color: #f5f5f5; padding: 20px; margin-top: 10px; border-radius: 5px; }}
-                .info-row {{ margin: 10px 0; padding: 8px; background-color: white; border-left: 4px solid #d32f2f; }}
-                .label {{ font-weight: bold; color: #d32f2f; }}
-                ul {{ margin-top: 8px; }}
-                li {{ margin-bottom: 6px; }}
-                .footer {{ margin-top: 20px; font-size: 0.9em; color: #666; border-top: 1px solid #ddd; padding-top: 10px; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <h2>EARTHQUAKE ALERTS (TEST_EMAIL)</h2>
-                </div>
-                <div class="content">
-                    <div class="info-row">
-                        <span class="label">Date &amp; Time:</span> 2026-03-26T14:30:15+08:00
-                    </div>
-                    <div class="info-row">
-                        <span class="label">Magnitude:</span> 6.2
-                    </div>
-                    <div class="info-row">
-                        <span class="label">Epicenter Location:</span> 15 km E of Cebu City
-                    </div>
-                    <div class="info-row">
-                        <span class="label">Intensity Felt in Cebu:</span> Intensity IV
-                    </div>
-                    <div class="info-row">
-                        <span class="label">Safety Precautions:</span>
-                        <ul>
-                            <li>Stay calm and be alert for possible aftershocks.</li>
-                            <li>Check surroundings for hazards (falling objects, cracks).</li>
-                            <li>Follow instructions from authorities.</li>
-                        </ul>
-                    </div>
-                </div>
-                <div class="footer">
-                    <p><strong>Source:</strong> PHIVOLCS (Philippine Institute of Volcanology and Seismology)</p>
-                    <p><strong>Alert Time:</strong> {alert_time}</p>
-                    <p><em>This is an automated crisis alert.</em></p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
-        send_test_email("EARTHQUAKE ALERT: (TEST_EMAIL)", earthquake_html)
+        earthquake_html = generate_earthquake_test_email_html(alert_time)
+        send_test_email(SUBJECT_EARTHQUAKE, earthquake_html)
         
         print("\n2️⃣ Sending HEAVY RAINFALL WARNING...")
         html2 = generate_test_email_html("HEAVY_RAINFALL", alert_time)
-        send_test_email("HEAVY RAINFALL WARNING (TEST_EMAIL)", html2)
+        send_test_email(SUBJECT_WEATHER, html2)
 
         print("\n3️⃣ Sending TROPICAL DEPRESSION / TYPHOON ALERTS...")
         html3 = generate_test_email_html("TROPICAL_CYCLONE", alert_time)
-        send_test_email("TROPICAL DEPRESSION / TYPHOON ALERTS (TEST_EMAIL)", html3)
+        send_test_email(SUBJECT_WEATHER, html3)
 
         print("\n4️⃣ Sending THUNDERSTORM WARNING...")
         html4 = generate_test_email_html("THUNDERSTORM", alert_time)
-        send_test_email("THUNDERSTORM WARNING (TEST_EMAIL)", html4)
+        send_test_email(SUBJECT_WEATHER, html4)
         
     elif choice == "0":
         print("Exiting...")

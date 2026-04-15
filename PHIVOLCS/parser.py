@@ -494,6 +494,7 @@ def formatEarthquakeEmail(earthquake: Dict[str, Any], alert_time: str) -> str:
                 <div class="info-row">
                     <span class="label">Safety Precautions:</span>
                     <ul>
+                        <li>Duck, Cover, and Hold during the shaking.</li>
                         <li>Stay calm and be alert for possible aftershocks.</li>
                         <li>Check surroundings for hazards (falling objects, cracks).</li>
                         <li>Follow instructions from authorities.</li>
@@ -501,7 +502,7 @@ def formatEarthquakeEmail(earthquake: Dict[str, Any], alert_time: str) -> str:
                 </div>
             </div>
             <div class="footer">
-                <p><strong>Source:</strong> PHIVOLCS (Philippine Institute of Volcanology and Seismology)</p>
+                <p><strong>Source:</strong> <a href="https://earthquake.phivolcs.dost.gov.ph/">PHIVOLCS Earthquake Information</a></p>
                 <p><strong>Alert Time:</strong> {safe_alert_time}</p>
                 <p><em>This is an automated crisis alert.</em></p>
             </div>
